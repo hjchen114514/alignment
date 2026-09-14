@@ -38,3 +38,6 @@ categories:
 te_ranges:
   QID181: [0, 20]
   QID182: [0, 20]
+
+# JSD binning for distances.py
+jsd_bins: 10

@@ -19,6 +19,7 @@ NUMBERS_DIR = RESULT_DIR / "numbers"
 DIAGRAM_DIR = RESULT_DIR / "diagram"
 
 HUMAN_PARQUET = DATA_DIR / "human_responses.parquet"
+HUMAN_RETEST_PARQUET = DATA_DIR / "human_retest.parquet"
 SYNTHETIC_PARQUET = DATA_DIR / "synthetic_responses.parquet"
 SYNTHETIC_JSONL = DATA_DIR / "synthetic_responses.jsonl"
 QUESTIONS_PARQUET = DATA_DIR / "questions.parquet"
