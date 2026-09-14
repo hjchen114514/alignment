@@ -1,0 +1,19 @@
+# env
+.venv/
+venv/
+.env
+__pycache__/
+*.pyc
+
+# raw source data (88MB, fetched from HuggingFace instead)
+raw_data/
+
+# generated artifacts
+data/*.parquet
+data/*.jsonl
+result/numbers/*.parquet
+result/numbers/*.json
+result/diagram/**/*.png
+
+# os
+.DS_Store

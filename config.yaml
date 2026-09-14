@@ -1,0 +1,40 @@
+# Twin-2K-500 ICL alignment experiment
+
+dataset: LLM-Digital-Twin/Twin-2K-500
+dataset_config: wave_split
+
+model: claude-opus-5
+n_personas: 100
+concurrency: 8
+seed: 42
+
+data_dir: data/
+result_dir: result/
+
+# probing exclusions (anchoring blocks; QID163-170 are those blocks' questions)
+skip_blocks: ["Anchoring"]
+skip_qids: ["QID163", "QID164", "QID165", "QID166", "QID167", "QID168", "QID169", "QID170"]
+
+# demographics, pulled from wave1_3_persona_json by QuestionID
+demographic_qids:
+  gender: QID12
+  age: QID13
+  education: QID14
+  race: QID15
+  favoredPoliticalParty: QID20
+  income: QID21
+  politicalViews: QID22
+
+# question categories, matched in order (first hit wins)
+categories:
+  - match: "Product Preferences"
+    name: "Pricing Preferences"
+  - match: "Non-experimental"
+    name: "Non-experimental heuristics and biases"
+  - match: "*"
+    name: "Behavioral economics"
+
+# text-entry questions carry no Range in the source; supply it here
+te_ranges:
+  QID181: [0, 20]
+  QID182: [0, 20]
