@@ -35,6 +35,7 @@ categories:
     name: "Behavioral economics"
 
 # text-entry questions carry no Range in the source; supply it here
+# QID181 and QID182 are the only two text-entry questions in the dataset, about sunk costs.
 te_ranges:
   QID181: [0, 20]
   QID182: [0, 20]

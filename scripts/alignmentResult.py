@@ -42,6 +42,9 @@ def sql(query: str) -> pd.DataFrame:
 def persona_alignment() -> pd.DataFrame:
     """Per-persona alignment, ceiling and shuffle floor, two-stage averaged."""
     return sql(f"""
+        --- calculate the alignment for all questions, but annoated as with their blocks, as we will average each block, and then average across blocks for each persona. This is the same two-stage averaging used in the paper.
+        
+        --- alignment of all questions annotated by pid and block.
         WITH answer_err AS (
             SELECT s.pid, q.block, ABS(s.normalized - h.normalized) AS err
             FROM '{SYNTHETIC_PARQUET}' s
@@ -49,12 +52,18 @@ def persona_alignment() -> pd.DataFrame:
             JOIN '{QUESTIONS_PARQUET}' q USING (qid, row_id)
             WHERE s.normalized IS NOT NULL
         ),
+
+        ---average the error for each block and then average across blocks for each persona.
         block_err AS (
             SELECT pid, block, AVG(err) AS e FROM answer_err GROUP BY pid, block
         ),
+
+        ---calculate the alignment score.
         alignment AS (
             SELECT pid, 1 - AVG(e) AS alignment FROM block_err GROUP BY pid
         ),
+
+        ---count the number of questions answered by each persona, to be used for filtering out personas with too few questions answered.
         counts AS (
             SELECT pid, COUNT(*) AS n_question FROM answer_err GROUP BY pid
         ),
@@ -66,9 +75,13 @@ def persona_alignment() -> pd.DataFrame:
             JOIN '{HUMAN_RETEST_PARQUET}' r USING (pid, qid, row_id)
             JOIN '{QUESTIONS_PARQUET}'    q USING (qid, row_id)
         ),
+
+        --- average the ceiling error for each block and then average across blocks for each persona.
         retest_block AS (
             SELECT pid, block, AVG(err) AS e FROM retest_err GROUP BY pid, block
         ),
+
+        --- calculate the ceiling score for each persona, which is 1 - average error across blocks.
         ceiling AS (
             SELECT pid, 1 - AVG(e) AS ceiling FROM retest_block GROUP BY pid
         ),
@@ -292,6 +305,6 @@ def main():
     print(f"wrote {CALCULATED_RESULT.name}   {len(groupings)} groupings")
     report(persona_df, question_df, groupings)
 
-
+ 
 if __name__ == "__main__":
     main()

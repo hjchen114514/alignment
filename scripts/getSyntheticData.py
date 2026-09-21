@@ -29,6 +29,8 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
     Three-way join: human_responses says which questions this pid saw,
     questions supplies the text and options.
     """
+
+    #query the row of questions that this persona (pid) was asked, joining the human responses with the questions table to get the question details
     rows = duckdb.sql(f"""
         SELECT q.block, q.qid, q.row_id, q.question_type,
                q.questiontext, q.options, q.range_min, q.range_max
@@ -40,6 +42,7 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
 
     blocks: dict[str, list[dict]] = {}
     for block, qid, row_id, qtype, text, options, lo, hi in rows:
+        #for each block as keys, we create a list of questions as values, where each question is represented as a dictionary with its details
         blocks.setdefault(block, []).append({
             "qid": qid, "row_id": int(row_id), "question_type": qtype,
             "questiontext": text, "options": list(options) if options is not None else [],
@@ -49,7 +52,9 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
 
 
 def build_record(pid: int, q: dict, answer, status: str) -> dict:
-    """One synthetic_responses row. answer is None when the call failed."""
+    """Create a row for the synthetic_responses.parquet file. """
+    """answer is None when the call failed."""
+
     if answer is None:
         return {"pid": int(pid), "qid": q["qid"], "row_id": q["row_id"],
                 "answer": None, "answertext": None, "normalized": None,
@@ -60,16 +65,16 @@ def build_record(pid: int, q: dict, answer, status: str) -> dict:
     answer = min(max(answer, int(lo)), int(hi))          # clamp to the valid range
     options = q["options"]
     if q["question_type"] in ("Matrix", "MC") and options:
-        answertext = options[answer - 1]
+        answertext = options[answer - 1] #original data is 1-based index, so we need to subtract 1 to get the correct option text.
     else:
-        answertext = str(answer)
-    normalized = 0.0 if hi == lo else (answer - lo) / (hi - lo)
+        answertext = str(answer) #if the question type is TE or Slider, we just convert the answer to string.
+    normalized = 0.0 if hi == lo else (answer - lo) / (hi - lo) #calculate the normalized value.
     return {"pid": int(pid), "qid": q["qid"], "row_id": q["row_id"],
             "answer": answer, "answertext": answertext,
-            "normalized": normalized, "status": status}
+            "normalized": normalized, "status": status} #return to the format for the synthetic_responses.parquet row.
 
 
-def append_jsonl(records: list[dict]) -> None:
+def append_jsonl(records: list[dict]) -> None: #write the records to the synthetic_responses.jsonl file.
     with _write_lock:
         with open(SYNTHETIC_JSONL, "a") as f:
             for r in records:
@@ -77,6 +82,7 @@ def append_jsonl(records: list[dict]) -> None:
 
 
 def already_done() -> set[tuple[int, str]]:
+    # returns a set with pid,qid pairs that have already been generated, so a rerun resumes instead of repeating
     """(pid, qid) pairs already generated, so a rerun resumes instead of repeating."""
     if not SYNTHETIC_JSONL.exists():
         return set()
@@ -92,29 +98,31 @@ def already_done() -> set[tuple[int, str]]:
     return done
 
 
-def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, int]:
+def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, int]: #ask questions through gateway, write to jsonl for synthetic_responses.parquet, and return the tuple of finsihed and pending.
     """Ask every block this persona saw. Returns (n_finished, n_pending)."""
-    blocks = load_blocks_for_persona(pid)
+    blocks = load_blocks_for_persona(pid) #load the blocks of questions for this persona from the human responses and questions tables
     n_ok = n_bad = 0
 
-    for block, questions in blocks.items():
-        pending = [q for q in questions if (int(pid), q["qid"]) not in done]
+    for block, questions in blocks.items(): #key: block name, value: list of questions in that block
+        pending = [q for q in questions if (int(pid), q["qid"]) not in done] #put the quesions that have not been generated yet into the pending list
         if not pending:
             continue
 
         try:
-            answers = aiGateway.ask_ai(icl, pending)
+            answers = aiGateway.ask_ai(icl, pending) #ask the model to generate answers for all pending questions in the list as dict using the persona's ICL text
             if len(answers) != len(pending):
                 raise ValueError(
                     f"model returned {len(answers)} answers for {len(pending)} questions"
                 )
+            #for the tuple of (question, answer) in zip(pending, answers), we build a row with the status being finished for synthetic_responses.parquet file.
+            #records is a list of dicts.
             records = [build_record(pid, q, a, "finished")
-                       for q, a in zip(pending, answers)]
-            n_ok += len(records)
+                       for q, a in zip(pending, answers)] #zip questions with the answers into a list of tuples.
+            n_ok += len(records) #return the number of finished records
         except Exception as exc:                                  # noqa: BLE001
             print(f"  pid {pid} block {block!r} failed: {exc}")
-            records = [build_record(pid, q, None, "pending") for q in pending]
-            n_bad += len(records)
+            records = [build_record(pid, q, None, "pending") for q in pending] #if crashed, we build a row with the status being pending for synthetic_responses.parquet file.
+            n_bad += len(records) #and then add the number of pending records to n_bad
 
         append_jsonl(records)
 
@@ -139,14 +147,19 @@ def main():
     personas = duckdb.sql(
         f"SELECT pid, icl FROM '{PERSONA_PARQUET}' ORDER BY pid"
     ).fetchall()
+
+    #done is the set of (pid, qid) pairs that have already been generated, so a rerun resumes instead of repeating
     done = already_done()
+
     if done:
         print(f"resuming: {len(done)} (pid, qid) pairs already finished")
 
     total_ok = total_bad = 0
+
+    # use a thread pool to ask questions for multiple personas in parallel, with a maximum number of workers specified in the config
     with ThreadPoolExecutor(max_workers=CFG["concurrency"]) as pool:
         futures = {
-            pool.submit(askQuestion, icl, int(pid), done): int(pid)
+            pool.submit(askQuestion, icl, int(pid), done): int(pid) #askQuestions will return a tuple of (n_finished, n_pending) for each persona,icl. Also write to jsonl for synthetic_responses.parquet. 
             for pid, icl in personas
         }
         for i, fut in enumerate(as_completed(futures), 1):
@@ -163,7 +176,7 @@ def main():
                       f"({total_ok} answers, {total_bad} pending)")
 
     print(f"\ngenerated {total_ok} answers, {total_bad} pending")
-    jsonl_to_parquet()
+    jsonl_to_parquet() #write the jsonl to parquet for synthetic_responses.parquet file, collapsing the JSONL to one row per (pid, qid, row_id), newest wins(hence can only write the finished rows for the duplicates).
 
 
 if __name__ == "__main__":

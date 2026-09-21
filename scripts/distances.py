@@ -60,12 +60,17 @@ def jsd(p: np.ndarray, q: np.ndarray) -> float:
 
 
 def load_by_persona() -> tuple[dict, dict]:
+    # select pid and normalized score of all human personas
     human = duckdb.sql(
         f"SELECT pid, normalized FROM '{HUMAN_PARQUET}'"
     ).df()
+
+    # select pid and normalized score of all synthetic personas
     synth = duckdb.sql(
         f"SELECT pid, normalized FROM '{SYNTHETIC_PARQUET}' WHERE normalized IS NOT NULL"
     ).df()
+
+    # create h and s, a dict of of key:persona pid, value: array of all normalized score of questions asked
     h = {int(p): g.normalized.to_numpy() for p, g in human.groupby("pid")}
     s = {int(p): g.normalized.to_numpy() for p, g in synth.groupby("pid")}
     return h, s
@@ -73,26 +78,35 @@ def load_by_persona() -> tuple[dict, dict]:
 
 def compute(human: dict, synth: dict) -> tuple[pd.DataFrame, dict]:
     """Per-persona JSD plus a shuffle floor against every other human."""
+
+    # draw histograms for all human/synthetic persona's normalized values
+    #output a pd.dataframe for turning into parquet later.
     human_hist = {pid: histogram(v) for pid, v in human.items()}
     synth_hist = {pid: histogram(v) for pid, v in synth.items()}
 
     rows = []
-    for pid, sh in synth_hist.items():
+    for pid, syn_hist in synth_hist.items():
+        # just in case
         if pid not in human_hist:
             continue
-        others = [jsd(sh, hh) for other, hh in human_hist.items() if other != pid]
+
+        #compute shuffle floor
+        others = [jsd(syn_hist, hh) for other, hh in human_hist.items() if other != pid]
         rows.append({
             "pid": pid,
-            "JSD": jsd(sh, human_hist[pid]),
+            #also compute JSD per persona
+            "JSD": jsd(syn_hist, human_hist[pid]),
             "n_question": int(len(synth[pid])),
             "shuffle_floor": float(np.mean(others)) if others else float("nan"),
         })
 
+    #return results in pd dfs.
     df = pd.DataFrame(rows).sort_values("pid").reset_index(drop=True)
     return df, {"human": human_hist, "synthetic": synth_hist}
 
 
 def build_groupings(dist_df: pd.DataFrame) -> list[dict]:
+    # build a list of dictionary for turning into pandas ds and then parquet for calculatedResult_distances.parquet
     personas = duckdb.sql(f"SELECT * EXCLUDE (icl) FROM '{PERSONA_PARQUET}'").df()
     merged = dist_df.merge(personas, on="pid")
     out = []
@@ -137,10 +151,13 @@ def draw_persona_distribution(pid: int, human_hist: np.ndarray,
     """Two densities over the normalized answer scale, JSD in the title."""
     width = 1.0 / BINS
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(CENTERS, human_hist / width, color="#4C72B0", lw=2,
+
+    # the two distribution plot lines for human and synthetic responses
+    ax.plot(CENTERS, human_hist / width, color="#4C72B0", lw=2, 
             marker="o", ms=4, label="human")
     ax.plot(CENTERS, synth_hist / width, color="#C44E52", lw=2,
             marker="s", ms=4, label="synthetic")
+    
     ax.fill_between(CENTERS, human_hist / width, color="#4C72B0", alpha=0.15)
     ax.fill_between(CENTERS, synth_hist / width, color="#C44E52", alpha=0.15)
     ax.set_xlim(0, 1)
@@ -195,15 +212,15 @@ def main():
     if not SYNTHETIC_PARQUET.exists():
         raise SystemExit("no synthetic responses - run getSyntheticData.py first")
 
-    human, synth = load_by_persona()
-    dist_df, hists = compute(human, synth)
+    human, synth = load_by_persona() # return a tuple of (dict, dict); #1 is human persona, and other is syntheitc personas.
+    dist_df, hists = compute(human, synth) # compute JSD and shuffle floor for all personas.
     groupings = build_groupings(dist_df)
 
-    dist_df.to_parquet(PERSONA_DISTANCES, index=False)
+    dist_df.to_parquet(PERSONA_DISTANCES, index=False) #for personaDistances.parquet
     pq.write_table(
         pa.Table.from_pylist(groupings, schema=DISTANCE_SCHEMA),
         CALCULATED_DISTANCES,
-    )
+    ) #write calculatedResult_distances.parquet
     print(f"wrote {PERSONA_DISTANCES.name}            {len(dist_df):,} rows")
     print(f"wrote {CALCULATED_DISTANCES.name}  {len(groupings)} groupings")
 
@@ -211,7 +228,7 @@ def main():
     for row in dist_df.itertuples():
         pid = int(row.pid)
         draw_persona_distribution(pid, hists["human"][pid],
-                                  hists["synthetic"][pid], row.JSD)
+                                  hists["synthetic"][pid], row.JSD) 
 
     for g in groupings:
         if g["grouping"] == "all_persona":

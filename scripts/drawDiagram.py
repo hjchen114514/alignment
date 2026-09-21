@@ -122,7 +122,7 @@ def main():
     for d in (PERSONA_DIR, QUESTION_DIR, MISC_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
-    errors = paired_errors()
+    errors = paired_errors() #get the MAE scores of each personas
     if errors.empty:
         raise SystemExit("no paired responses - run getSyntheticData.py first")
 

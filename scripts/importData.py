@@ -4,6 +4,8 @@ Writes:
     data/human_responses.parquet   one row per (pid, qid, row_id)
     data/questions.parquet         one row per (qid, row_id)
     data/persona.parquet           one row per pid, incl. ICL text
+
+Import of the dataset is in the main function.
 """
 import json
 import sys
@@ -12,14 +14,17 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+#import all common.py functions and paths
 from common import (  # noqa: E402
     CFG, DATA_DIR, HUMAN_PARQUET, HUMAN_RETEST_PARQUET, PERSONA_PARQUET,
     QUESTIONS_PARQUET, categorize, ensure_dirs, is_skipped_block, is_skipped_qid,
 )
 
+#import te_ranges from config.yaml for the text entry questions, which carry no Range in the source
 TE_RANGES = {k: tuple(v) for k, v in (CFG.get("te_ranges") or {}).items()}
 
-
+#helper function to convert answers to int, since they can arrive as int, '50', or 50.0
 def to_int(value):
     """Answers arrive as int, '50', or 50.0 - int('50.0') raises, so go via float."""
     return int(float(value))
@@ -37,8 +42,8 @@ def parse_question(q: dict, block_name: str):
     answers = q.get("Answers", {}) or {}
 
     if qtype == "Matrix":
-        options = q.get("Columns") or []
-        selected = answers.get("SelectedByPosition") or []
+        options = q.get("Columns") or [] 
+        selected = answers.get("SelectedByPosition") or [] 
         texts = answers.get("SelectedText") or []
         for i, row_label in enumerate(q.get("Rows") or []):
             if i >= len(selected) or selected[i] is None:
@@ -80,7 +85,8 @@ def parse_question(q: dict, block_name: str):
                 "questiontext": stem,
                 "options": [],
                 "range_min": lo, "range_max": hi,
-                "answer": answer, "answertext": str(answer),
+                "answer": answer, 
+                "answertext": str(answer),
             }
 
     elif qtype == "TE":
@@ -99,10 +105,11 @@ def parse_question(q: dict, block_name: str):
             "questiontext": stem,
             "options": [],
             "range_min": float(lo), "range_max": float(hi),
-            "answer": answer, "answertext": str(answer),
+            "answer": answer, 
+            "answertext": str(answer),
         }
 
-
+#helper function to normalize answers to [0,1] based on the question's range
 def normalize(answer: int, lo: float, hi: float) -> float:
     if hi == lo:
         return 0.0
@@ -110,56 +117,77 @@ def normalize(answer: int, lo: float, hi: float) -> float:
 
 
 def main():
+    # ensure that the data and result directories exist, creating them if necessary; imported from common.py
     ensure_dirs()
+
     from datasets import load_dataset
 
+    #n= number of personas to load from datasets, defined in config.yaml
     n = CFG["n_personas"]
     print(f"loading {CFG['dataset']} ({CFG['dataset_config']}) ...")
+
+    #load the wave_split dataset into ds
     ds = load_dataset(CFG["dataset"], CFG["dataset_config"])["data"]
     print(f"  {len(ds)} personas available, taking first {n}")
 
     human_rows, retest_rows, persona_rows = [], [], []
+
+    #questions is a dictionary with keys as (qid, row_id) tuples and values as dictionaries containing question metadata
     questions: dict[tuple[str, int], dict] = {}
+
     dq = CFG["demographic_qids"]
-    wanted_demo = {qid: field for field, qid in dq.items()}
+
+    #turn wanted demographic qids into a dictionary
+    wanted_demographic = {qid: field for field, qid in dq.items()}
+
     clipped = 0
 
-    for index in range(n):
+    for index in range(n): # n is the number of personas to load from datasets, defined in config.yaml, 100 for now
+        #for each persona, get the row from the dataset and extract the pid
         row = ds[index]
         pid = int(row["pid"])
 
-        # --- responses, from both administrations of the wave-4 questions ---
-        # wave4_Q_wave1_3_A is the benchmark; wave4_Q_wave4_A is the same person
-        # answering the same items again, which gives the test-retest ceiling.
-        for source_field, target in (("wave4_Q_wave1_3_A", human_rows),
-                                     ("wave4_Q_wave4_A", retest_rows)):
+        #this for loop will fill in human_rows and retest_rows with the responses data from wave1-3 and wave4.
+        for source_field, target in (("wave4_Q_wave1_3_A", human_rows), ("wave4_Q_wave4_A", retest_rows)):
+            #record_metadata is True for the first administration of the wave-4 questions, and False for the second administration
             record_metadata = source_field == "wave4_Q_wave1_3_A"
+
+            #for each element/block in each row(persona) for wave4_Q_wave1_3_A or wave4_Q_wave4_A, 
+            # json.loads is used to parse the JSON string into a Python object (list of dicts), and then we iterate over each element in that list
             for element in json.loads(row[source_field]):
+                # the or "" ensures that if BlockName is None, we get an empty string instead of an error when calling strip()
                 block = (element.get("BlockName") or "").strip()
                 if is_skipped_block(block):
                     continue
                 category = categorize(block)
+
+                # the or [] ensures that if Questions is None, we get an empty list instead of an error when calling get()
+                # for each question in each element/block.
                 for q in element.get("Questions", []):
+                    # skip descriptive questions and DB questions, since they are not answerable and do not have a range to normalize
                     if q.get("is_descriptive") or q.get("QuestionType") == "DB":
                         continue
                     if is_skipped_qid(q.get("QuestionID", "")):
                         continue
-                    for rec in parse_question(q, block):
-                        key = (rec["qid"], rec["row_id"])
+                    for rec in parse_question(q, block): # call parse_question to yield one dict per answerable row of a single question
+                        key = (rec["qid"], rec["row_id"]) #key is a tuple of (qid, row_id) to uniquely identify each question row(to avoid duplicates for matrix questions)
                         if record_metadata and key not in questions:
                             questions[key] = {
                                 "qid": rec["qid"], "row_id": rec["row_id"],
                                 "category": category, "block": block,
-                                "question_type": rec["question_type"],
+                                "question_type": rec["question_type"], # an extra?
                                 "questiontext": rec["questiontext"],
                                 "options": rec["options"],
                                 "range_min": rec["range_min"],
                                 "range_max": rec["range_max"],
                             }
                         norm = normalize(rec["answer"], rec["range_min"], rec["range_max"])
+
+                        #in the case of an answer falling outside the range, we clip it to [0,1] and count how many times this happens; will be printed later in terminal
                         if not (0.0 <= norm <= 1.0):
                             clipped += 1
                             norm = min(max(norm, 0.0), 1.0)
+
                         target.append({
                             "pid": pid, "qid": rec["qid"], "row_id": rec["row_id"],
                             "answer": rec["answer"],
@@ -169,9 +197,9 @@ def main():
 
         # --- demographics (waves 1-3) + ICL text ---
         persona = {"pid": pid}
-        for element in json.loads(row["wave1_3_persona_json"]):
+        for element in json.loads(row["wave1_3_persona_json"]): #for each block
             for q in element.get("Questions", []):
-                field = wanted_demo.get(q.get("QuestionID"))
+                field = wanted_demographic.get(q.get("QuestionID"))
                 if not field:
                     continue
                 a = q.get("Answers", {}) or {}
@@ -185,11 +213,13 @@ def main():
         if (index + 1) % 25 == 0:
             print(f"  {index + 1}/{n} personas parsed")
 
+    #turn the lists of dicts into pandas DataFrames and write them to parquet files in the data directory
     human = pd.DataFrame(human_rows)
     retest = pd.DataFrame(retest_rows)
     qdf = pd.DataFrame(list(questions.values()))
     pdf = pd.DataFrame(persona_rows)[["pid", *dq.keys(), "icl"]]
 
+    #index is false to avoid writing the index column to the parquet file, since we don't need it and it would take up extra space
     human.to_parquet(HUMAN_PARQUET, index=False)
     retest.to_parquet(HUMAN_RETEST_PARQUET, index=False)
     qdf.to_parquet(QUESTIONS_PARQUET, index=False)
