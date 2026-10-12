@@ -3,8 +3,10 @@
 dataset: LLM-Digital-Twin/Twin-2K-500
 dataset_config: wave_split
 
-model: claude-opus-5
+model: gpt-6-luna      # OpenAI API id; key in OPENAI_API_KEY (.env)
+max_retries: 3
 n_personas: 100
+n_synthetic: 2         # personas getSyntheticData.py runs on, first n by pid (null = all), this is for debugging and testing
 concurrency: 8
 seed: 42
 

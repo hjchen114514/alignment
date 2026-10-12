@@ -40,7 +40,7 @@ def sql(query: str) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 
 def persona_alignment() -> pd.DataFrame:
-    """Per-persona alignment, ceiling and shuffle floor, two-stage averaged."""
+    """Per-persona alignment and ceiling, two-stage averaged."""
     return sql(f"""
         --- calculate the alignment for all questions, but annoated as with their blocks, as we will average each block, and then average across blocks for each persona. This is the same two-stage averaging used in the paper.
         
@@ -84,34 +84,12 @@ def persona_alignment() -> pd.DataFrame:
         --- calculate the ceiling score for each persona, which is 1 - average error across blocks.
         ceiling AS (
             SELECT pid, 1 - AVG(e) AS ceiling FROM retest_block GROUP BY pid
-        ),
-
-        -- shuffle floor: persona A's synthetic answers scored against every
-        -- OTHER human. If this matches the real alignment, the ICL text taught
-        -- the model nothing person-specific.
-        cross_err AS (
-            SELECT s.pid AS synth_pid, h.pid AS human_pid, q.block,
-                   AVG(ABS(s.normalized - h.normalized)) AS e
-            FROM '{SYNTHETIC_PARQUET}' s
-            JOIN '{HUMAN_PARQUET}'     h USING (qid, row_id)
-            JOIN '{QUESTIONS_PARQUET}' q USING (qid, row_id)
-            WHERE s.pid <> h.pid AND s.normalized IS NOT NULL
-            GROUP BY s.pid, h.pid, q.block
-        ),
-        cross_pair AS (
-            SELECT synth_pid, human_pid, AVG(e) AS pair_err
-            FROM cross_err GROUP BY synth_pid, human_pid
-        ),
-        shuffle AS (
-            SELECT synth_pid AS pid, 1 - AVG(pair_err) AS shuffle_floor
-            FROM cross_pair GROUP BY synth_pid
         )
 
-        SELECT a.pid, a.alignment, c.n_question, ce.ceiling, sh.shuffle_floor
+        SELECT a.pid, a.alignment, c.n_question, ce.ceiling
         FROM alignment a
         JOIN counts   c  USING (pid)
         JOIN ceiling  ce USING (pid)
-        JOIN shuffle  sh USING (pid)
         ORDER BY a.pid
     """)
 
@@ -176,7 +154,6 @@ def build_groupings(persona_df: pd.DataFrame,
         "sampleSize": {"all": len(persona_df)},
         "retestAccuracy": {"all": float(persona_df.ceiling.mean())},
         "avgAlignment": {"all": float(persona_df.alignment.mean())},
-        "shuffleFloor": {"all": float(persona_df.shuffle_floor.mean())},
         "rank": rank(dict(zip(persona_df.pid.astype(str), persona_df.alignment))),
     })
 
@@ -189,7 +166,6 @@ def build_groupings(persona_df: pd.DataFrame,
             "sampleSize": {str(k): int(v) for k, v in g.size().to_dict().items()},
             "retestAccuracy": {str(k): float(v) for k, v in g.ceiling.mean().to_dict().items()},
             "avgAlignment": {str(k): float(v) for k, v in align.items()},
-            "shuffleFloor": {str(k): float(v) for k, v in g.shuffle_floor.mean().to_dict().items()},
             "rank": rank(align),
         })
 
@@ -200,7 +176,6 @@ def build_groupings(persona_df: pd.DataFrame,
         "sampleSize": {"all": len(question_df)},
         "retestAccuracy": {"all": float(question_df.ceiling.mean())},
         "avgAlignment": {"all": float(question_df.alignment.mean())},
-        "shuffleFloor": {},
         "rank": rank(dict(zip(qkey, question_df.alignment))),
     })
 
@@ -213,7 +188,6 @@ def build_groupings(persona_df: pd.DataFrame,
             "sampleSize": {str(k): int(v) for k, v in g.size().to_dict().items()},
             "retestAccuracy": {str(k): float(v) for k, v in g.ceiling.mean().to_dict().items()},
             "avgAlignment": {str(k): float(v) for k, v in align.items()},
-            "shuffleFloor": {},
             "rank": rank(align),
         })
 
@@ -225,7 +199,6 @@ CALCULATED_SCHEMA = pa.schema([
     ("sampleSize", pa.map_(pa.string(), pa.int64())),
     ("retestAccuracy", pa.map_(pa.string(), pa.float64())),
     ("avgAlignment", pa.map_(pa.string(), pa.float64())),
-    ("shuffleFloor", pa.map_(pa.string(), pa.float64())),
     ("rank", pa.list_(pa.struct([("name", pa.string()), ("score", pa.float64())]))),
 ])
 
@@ -241,15 +214,12 @@ def report(persona_df: pd.DataFrame, question_df: pd.DataFrame,
            groupings: list[dict]) -> None:
     align = persona_df.alignment.mean()
     ceiling = persona_df.ceiling.mean()
-    floor = persona_df.shuffle_floor.mean()
 
     print("\n" + "=" * 62)
     print("OVERALL")
     print("=" * 62)
     print(f"  ceiling  (human vs himself)   {ceiling:>8.2%}")
     print(f"  alignment(synthetic vs human) {align:>8.2%}")
-    print(f"  shuffle floor (vs strangers)  {floor:>8.2%}")
-    print(f"  lift over shuffle             {align - floor:>+8.2%}")
     print(f"  pct of ceiling                {align / ceiling:>8.2%}")
     print(f"  personas={len(persona_df)}  questions={len(question_df)}")
 
@@ -305,6 +275,6 @@ def main():
     print(f"wrote {CALCULATED_RESULT.name}   {len(groupings)} groupings")
     report(persona_df, question_df, groupings)
 
- 
+
 if __name__ == "__main__":
     main()

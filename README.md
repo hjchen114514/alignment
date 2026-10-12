@@ -7,22 +7,27 @@ asked the wave 4 questions they actually answered.
 
 ## Setup
 
+Python 3.14.
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python3.14 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+echo "OPENAI_API_KEY=your-key" > .env      # gitignored
 ```
 
 ## Run
 
 ```bash
-.venv/bin/python scripts/importData.py        # build the source tables
-.venv/bin/python scripts/getSyntheticData.py  # generate synthetic responses (needs aiGateway)
-.venv/bin/python scripts/alignmentResult.py   # compute alignment scores
-.venv/bin/python scripts/drawDiagram.py       # draw alignment diagrams
-.venv/bin/python scripts/distances.py         # JSD distributions (secondary metric)
+python scripts/importData.py         # build the source tables
+python scripts/getSyntheticData.py   # generate synthetic responses (resumable)
+python scripts/alignmentResult.py    # compute alignment scores
+python scripts/drawDiagram.py        # draw alignment diagrams
+python scripts/distances.py          # JSD distributions (secondary metric)
 ```
 
-Settings live in `config.yaml`.
+Settings live in `config.yaml`. `n_synthetic` limits generation to the first n
+personas (`null` = all); raising it later skips personas already finished.
 
 ## Metric
 
@@ -31,21 +36,20 @@ Alignment follows the Twin-2K-500 paper: for each answer,
 across blocks. The two-stage average stops the 40-question pricing block from
 dominating the 15 single-question blocks.
 
-Three reference points make the number interpretable:
-
 | | meaning |
 |---|---|
 | **ceiling** | the same human answering the same questions twice (~82.8% on 100 personas; the paper reports 81.72%) |
 | **alignment** | the synthetic twin vs the real human |
-| **shuffle floor** | the synthetic twin vs 99 *other* humans - what you would score by ignoring the persona entirely |
-
-If alignment sits near the shuffle floor, the in-context conditioning taught the
-model nothing person-specific.
 
 `distances.py` adds Jensen-Shannon divergence as a secondary, *unpaired* view:
 it compares the shape of the two answer distributions without regard to which
 answer went with which question. The two metrics disagreeing is a finding, not
 a bug.
+
+## Model
+
+`adaptors/aiGateway.py` calls the OpenAI Responses API with the model named in
+`config.yaml` (`gpt-6-luna`), reading the key from `.env`.
 
 ## Data
 
@@ -57,9 +61,26 @@ a bug.
 | `data/questions.parquet` | question text, options, range, block, category |
 | `data/persona.parquet` | demographics and the ICL conditioning text |
 
+## Results
+
+| path | contents |
+|---|---|
+| `result/numbers/personaAlignment.parquet` | alignment and ceiling per persona |
+| `result/numbers/questionAlignment.parquet` | alignment, ceiling and answer spread per question |
+| `result/numbers/calculatedResult.parquet` | averages and rankings by demographic, block and category |
+| `result/numbers/personaDistances.parquet` | JSD per persona |
+| `result/numbers/calculatedResult_distances.parquet` | JSD averages and rankings by demographic |
+| `result/diagram/persona/` | alignment per question, one chart per persona |
+| `result/diagram/question/` | alignment per persona, one chart per question |
+| `result/diagram/miscellaneous/` | ranked bar charts per grouping |
+| `result/diagram/distances/` | human vs synthetic answer distributions, plus ranked JSD charts |
+
 Generated files are gitignored; rerun the scripts to rebuild them.
 
-## Status
+## Tests
 
-`adaptors/aiGateway.py` is a stub - the model has not been chosen yet. Its
-docstring holds the interface contract and implementation pseudocode.
+```bash
+python -m pytest tests -q
+```
+
+No network or real data needed - the tests build a tiny hand-computed dataset.

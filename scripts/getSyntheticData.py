@@ -31,14 +31,17 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
     """
 
     #query the row of questions that this persona (pid) was asked, joining the human responses with the questions table to get the question details
-    rows = duckdb.sql(f"""
-        SELECT q.block, q.qid, q.row_id, q.question_type,
-               q.questiontext, q.options, q.range_min, q.range_max
-        FROM '{HUMAN_PARQUET}' h
-        JOIN '{QUESTIONS_PARQUET}' q USING (qid, row_id)
-        WHERE h.pid = {int(pid)}
-        ORDER BY q.block, q.qid, q.row_id
-    """).fetchall()
+    # own connection per call: this runs in worker threads, and threads sharing
+    # duckdb's default connection (duckdb.sql) deadlock
+    with duckdb.connect() as con:
+        rows = con.sql(f"""
+            SELECT q.block, q.qid, q.row_id, q.question_type,
+                   q.questiontext, q.options, q.range_min, q.range_max
+            FROM '{HUMAN_PARQUET}' h
+            JOIN '{QUESTIONS_PARQUET}' q USING (qid, row_id)
+            WHERE h.pid = {int(pid)}
+            ORDER BY q.block, q.qid, q.row_id
+        """).fetchall()
 
     blocks: dict[str, list[dict]] = {}
     for block, qid, row_id, qtype, text, options, lo, hi in rows:
@@ -109,7 +112,7 @@ def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, in
             continue
 
         try:
-            answers = aiGateway.ask_ai(icl, pending) #ask the model to generate answers for all pending questions in the list as dict using the persona's ICL text
+            answers = aiGateway.ask_ai(icl, pending, pid) #ask the model to generate answers for all pending questions in the list as dict using the persona's ICL text
             if len(answers) != len(pending):
                 raise ValueError(
                     f"model returned {len(answers)} answers for {len(pending)} questions"
@@ -130,10 +133,13 @@ def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, in
 
 
 def jsonl_to_parquet() -> None:
-    """Collapse the JSONL to one row per (pid, qid, row_id), newest wins."""
+    """Collapse the JSONL to one row per (pid, qid, row_id), a finished row wins."""
     df = pd.read_json(SYNTHETIC_JSONL, lines=True)
-    df = (df.sort_values("status", ascending=False)       # 'pending' < 'finished'
+    # finished rows first, so keep="first" drops the pending attempts of a retried question
+    df = (df.assign(_finished=df.status.eq("finished"))
+            .sort_values("_finished", ascending=False, kind="stable")
             .drop_duplicates(subset=["pid", "qid", "row_id"], keep="first")
+            .drop(columns="_finished")
             .sort_values(["pid", "qid", "row_id"]))
     df["answer"] = df["answer"].astype("Int64")
     df.to_parquet(SYNTHETIC_PARQUET, index=False)
@@ -144,8 +150,11 @@ def jsonl_to_parquet() -> None:
 
 def main():
     ensure_dirs()
+    # n_synthetic in config.yaml limits the run to the first n personas (null = all);
+    # raising it later resumes, since finished personas are skipped
+    limit = f"LIMIT {int(CFG['n_synthetic'])}" if CFG.get("n_synthetic") else ""
     personas = duckdb.sql(
-        f"SELECT pid, icl FROM '{PERSONA_PARQUET}' ORDER BY pid"
+        f"SELECT pid, icl FROM '{PERSONA_PARQUET}' ORDER BY pid {limit}"
     ).fetchall()
 
     #done is the set of (pid, qid) pairs that have already been generated, so a rerun resumes instead of repeating

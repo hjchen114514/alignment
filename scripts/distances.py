@@ -77,7 +77,7 @@ def load_by_persona() -> tuple[dict, dict]:
 
 
 def compute(human: dict, synth: dict) -> tuple[pd.DataFrame, dict]:
-    """Per-persona JSD plus a shuffle floor against every other human."""
+    """Per-persona JSD between the human and synthetic answer distributions."""
 
     # draw histograms for all human/synthetic persona's normalized values
     #output a pd.dataframe for turning into parquet later.
@@ -89,15 +89,11 @@ def compute(human: dict, synth: dict) -> tuple[pd.DataFrame, dict]:
         # just in case
         if pid not in human_hist:
             continue
-
-        #compute shuffle floor
-        others = [jsd(syn_hist, hh) for other, hh in human_hist.items() if other != pid]
         rows.append({
             "pid": pid,
             #also compute JSD per persona
             "JSD": jsd(syn_hist, human_hist[pid]),
             "n_question": int(len(synth[pid])),
-            "shuffle_floor": float(np.mean(others)) if others else float("nan"),
         })
 
     #return results in pd dfs.
@@ -119,7 +115,6 @@ def build_groupings(dist_df: pd.DataFrame) -> list[dict]:
         "grouping": "all_persona",
         "sampleSize": {"all": len(dist_df)},
         "avgJSD": {"all": float(dist_df.JSD.mean())},
-        "shuffleFloor": {"all": float(dist_df.shuffle_floor.mean())},
         "rank": rank(dict(zip(dist_df.pid.astype(str), dist_df.JSD))),
     })
 
@@ -130,8 +125,6 @@ def build_groupings(dist_df: pd.DataFrame) -> list[dict]:
             "grouping": field,
             "sampleSize": {str(k): int(v) for k, v in g.size().to_dict().items()},
             "avgJSD": {str(k): float(v) for k, v in means.items()},
-            "shuffleFloor": {str(k): float(v)
-                             for k, v in g.shuffle_floor.mean().to_dict().items()},
             "rank": rank(means),
         })
     return out
@@ -141,7 +134,6 @@ DISTANCE_SCHEMA = pa.schema([
     ("grouping", pa.string()),
     ("sampleSize", pa.map_(pa.string(), pa.int64())),
     ("avgJSD", pa.map_(pa.string(), pa.float64())),
-    ("shuffleFloor", pa.map_(pa.string(), pa.float64())),
     ("rank", pa.list_(pa.struct([("name", pa.string()), ("score", pa.float64())]))),
 ])
 
@@ -176,7 +168,6 @@ def report(dist_df: pd.DataFrame, groupings: list[dict]) -> None:
     print("=" * 62)
     print(f"  mean JSD                 {dist_df.JSD.mean():>8.4f}")
     print(f"  median JSD               {dist_df.JSD.median():>8.4f}")
-    print(f"  shuffle floor (vs others){dist_df.shuffle_floor.mean():>8.4f}")
     print(f"  bins={BINS}  personas={len(dist_df)}")
 
     best = dist_df.nsmallest(3, "JSD")
@@ -213,7 +204,7 @@ def main():
         raise SystemExit("no synthetic responses - run getSyntheticData.py first")
 
     human, synth = load_by_persona() # return a tuple of (dict, dict); #1 is human persona, and other is syntheitc personas.
-    dist_df, hists = compute(human, synth) # compute JSD and shuffle floor for all personas.
+    dist_df, hists = compute(human, synth) # compute JSD for all personas.
     groupings = build_groupings(dist_df)
 
     dist_df.to_parquet(PERSONA_DISTANCES, index=False) #for personaDistances.parquet
@@ -231,8 +222,6 @@ def main():
                                   hists["synthetic"][pid], row.JSD) 
 
     for g in groupings:
-        if g["grouping"] == "all_persona":
-            continue
         draw_rank(g["grouping"], g["rank"], g["sampleSize"],
                   DIST_MISC_DIR, value_label="JSD")
 
