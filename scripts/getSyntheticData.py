@@ -65,7 +65,12 @@ def build_record(pid: int, q: dict, answer, status: str) -> dict:
 
     answer = int(answer)
     lo, hi = q["range_min"], q["range_max"]
-    answer = min(max(answer, int(lo)), int(hi))          # clamp to the valid range
+    clamped = min(max(answer, int(lo)), int(hi))         # clamp to the valid range
+    if clamped != answer:
+        # loud, so a model answering on the wrong scale is noticed rather than scored
+        print(f"  pid {pid} {q['qid']}_{q['row_id']}: answer {answer} outside "
+              f"[{int(lo)}, {int(hi)}], clamped to {clamped}")
+    answer = clamped
     options = q["options"]
     if q["question_type"] in ("Matrix", "MC") and options:
         answertext = options[answer - 1] #original data is 1-based index, so we need to subtract 1 to get the correct option text.
@@ -84,30 +89,33 @@ def append_jsonl(records: list[dict]) -> None: #write the records to the synthet
                 f.write(json.dumps(r) + "\n")
 
 
-def already_done() -> set[tuple[int, str]]:
-    # returns a set with pid,qid pairs that have already been generated, so a rerun resumes instead of repeating
-    """(pid, qid) pairs already generated, so a rerun resumes instead of repeating."""
+def read_jsonl() -> list[dict]:
+    """Every record in the JSONL, skipping a line half-written by a killed run."""
     if not SYNTHETIC_JSONL.exists():
-        return set()
-    done = set()
+        return []
+    records = []
     with open(SYNTHETIC_JSONL) as f:
         for line in f:
             try:
-                r = json.loads(line)
+                records.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-            if r.get("status") == "finished":
-                done.add((int(r["pid"]), r["qid"]))
-    return done
+    return records
 
 
-def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, int]: #ask questions through gateway, write to jsonl for synthetic_responses.parquet, and return the tuple of finsihed and pending.
+def already_done() -> set[tuple[int, str, int]]:
+    """(pid, qid, row_id) already finished, so a rerun resumes instead of repeating."""
+    return {(int(r["pid"]), r["qid"], int(r["row_id"]))
+            for r in read_jsonl() if r.get("status") == "finished"}
+
+
+def askQuestion(icl: str, pid: int, done: set[tuple[int, str, int]]) -> tuple[int, int]: #ask questions through gateway, write to jsonl for synthetic_responses.parquet, and return the tuple of finsihed and pending.
     """Ask every block this persona saw. Returns (n_finished, n_pending)."""
     blocks = load_blocks_for_persona(pid) #load the blocks of questions for this persona from the human responses and questions tables
     n_ok = n_bad = 0
 
     for block, questions in blocks.items(): #key: block name, value: list of questions in that block
-        pending = [q for q in questions if (int(pid), q["qid"]) not in done] #put the quesions that have not been generated yet into the pending list
+        pending = [q for q in questions if (int(pid), q["qid"], q["row_id"]) not in done] #put the quesions that have not been generated yet into the pending list
         if not pending:
             continue
 
@@ -134,7 +142,7 @@ def askQuestion(icl: str, pid: int, done: set[tuple[int, str]]) -> tuple[int, in
 
 def jsonl_to_parquet() -> None:
     """Collapse the JSONL to one row per (pid, qid, row_id), a finished row wins."""
-    df = pd.read_json(SYNTHETIC_JSONL, lines=True)
+    df = pd.DataFrame(read_jsonl())
     # finished rows first, so keep="first" drops the pending attempts of a retried question
     df = (df.assign(_finished=df.status.eq("finished"))
             .sort_values("_finished", ascending=False, kind="stable")
@@ -157,11 +165,11 @@ def main():
         f"SELECT pid, icl FROM '{PERSONA_PARQUET}' ORDER BY pid {limit}"
     ).fetchall()
 
-    #done is the set of (pid, qid) pairs that have already been generated, so a rerun resumes instead of repeating
+    #done is the set of (pid, qid, row_id) already generated, so a rerun resumes instead of repeating
     done = already_done()
 
     if done:
-        print(f"resuming: {len(done)} (pid, qid) pairs already finished")
+        print(f"resuming: {len(done)} answers already finished")
 
     total_ok = total_bad = 0
 

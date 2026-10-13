@@ -58,11 +58,24 @@ def test_already_done_only_counts_finished(jsonl):
                         gs.build_record(1, SLIDER, None, "pending")])
     with open(jsonl, "a") as f:
         f.write('{"truncated by a crash\n')        # a half-written line is skipped
-    assert gs.already_done() == {(1, "M")}
+    assert gs.already_done() == {(1, "M", 0)}
 
 
 def test_already_done_without_file(jsonl):
     assert gs.already_done() == set()
+
+
+def test_clamp_is_reported(capsys):
+    gs.build_record(7, MC, 9, "finished")
+    assert "answer 9 outside [1, 5], clamped to 5" in capsys.readouterr().out
+
+
+def test_jsonl_to_parquet_survives_truncated_line(jsonl):
+    write_lines(jsonl, [gs.build_record(1, MC, 4, "finished")])
+    with open(jsonl, "a") as f:
+        f.write('{"pid": 1, "qid": "S", "row')        # killed mid-write
+    gs.jsonl_to_parquet()
+    assert len(pd.read_parquet(gs.SYNTHETIC_PARQUET)) == 1
 
 
 def test_jsonl_to_parquet_finished_beats_pending(jsonl):

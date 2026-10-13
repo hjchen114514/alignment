@@ -262,6 +262,14 @@ def main():
                 f"missing {required} - run importData.py and getSyntheticData.py first"
             )
 
+    pending = duckdb.sql(
+        f"SELECT COUNT(*) FROM '{SYNTHETIC_PARQUET}' WHERE normalized IS NULL"
+    ).fetchone()[0]
+    if pending:
+        # the ceiling covers every question, alignment only the answered ones
+        print(f"WARNING: {pending} synthetic answers are still pending and are left out "
+              f"of alignment - rerun getSyntheticData.py to finish them")
+
     persona_df = persona_alignment()
     question_df = question_alignment()
     groupings = build_groupings(persona_df, question_df)

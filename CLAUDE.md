@@ -116,7 +116,7 @@ Slider to one per value; MC/TE always have `row_id = 0`.
 
 - Generation results append to `data/synthetic_responses.jsonl` as they
   arrive, then collapse to parquet; a finished row beats a pending row for the
-  same key. Reruns resume from the JSONL (finished `(pid, qid)` are skipped), so
+  same key. Reruns resume from the JSONL (finished `(pid, qid, row_id)` are skipped), so
   never delete it unless you intend to pay to regenerate everything.
 - Prompt caching: instructions + persona icl form a byte-identical prefix for
   all 16 of a persona's blocks; the questions must come after it. gpt-5.6+
