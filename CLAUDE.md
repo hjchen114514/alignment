@@ -102,11 +102,11 @@ Slider to one per value; MC/TE always have `row_id = 0`.
 
 `result/diagram/`
 - `persona/persona_<pid>.png`: x = question, y = alignment; dashed lines for
-  the average alignment of all personas and this persona's retest ceiling
-  (different colors); title shows n questions.
+  the average alignment of all personas, this persona's retest ceiling and
+  this persona's own alignment (red, green, yellow); title shows n questions.
 - `question/question_<qid>_<row>.png`: x = persona, y = alignment; dashed
-  lines for the average alignment of all questions and this question's retest
-  ceiling; title shows n personas.
+  lines for the average alignment of all questions, this question's retest
+  ceiling and this question's own alignment; title shows n personas.
 - `miscellaneous/rank_<grouping>.png` (rank_allPersona, rank_allQuestion,
   rank_race, ...): bars ranked ascending left to right, n under each bar.
 - `distances/persona_<pid>.png` (human vs synthetic density, JSD in title)

@@ -34,6 +34,7 @@ CALCULATED_RESULT = NUMBERS_DIR / "calculatedResult.parquet"
 BAR = "#4C72B0"
 AVG_LINE = "#C44E52"       # dashed line 1: average alignment
 CEILING_LINE = "#55A868"   # dashed line 2: retest ceiling
+OWN_LINE = "#E1B400"       # dashed line 3: this persona's / question's own alignment
 
 # grouping name in calculatedResult -> diagram file name
 FILE_NAMES = {"all_persona": "allPersona", "all_question": "allQuestion"}
@@ -52,13 +53,14 @@ def paired_alignment() -> pd.DataFrame:
 
 
 def draw_bars(labels, scores, avg: float, avg_label: str, ceiling: float,
-              xlabel: str, title: str, path: Path) -> None:
-    """Bars of alignment with the two dashed reference lines."""
+              own: float, own_label: str, xlabel: str, title: str, path: Path) -> None:
+    """Bars of alignment with the three dashed reference lines."""
     fig, ax = plt.subplots(figsize=(max(8, len(scores) * 0.16), 4))
     ax.bar(range(len(scores)), scores, color=BAR, width=0.8)
     ax.axhline(avg, ls="--", color=AVG_LINE, lw=1.4, label=f"{avg_label} ({avg:.1%})")
     ax.axhline(ceiling, ls="--", color=CEILING_LINE, lw=1.4,
                label=f"retest ceiling ({ceiling:.1%})")
+    ax.axhline(own, ls="--", color=OWN_LINE, lw=1.4, label=f"{own_label} ({own:.1%})")
     ax.set_xticks(range(len(scores)))
     ax.set_xticklabels(labels, rotation=90, fontsize=4)
     ax.set_ylim(0, 1.05)
@@ -114,6 +116,7 @@ def main():
         rows = pairs[pairs.pid == p.pid]
         draw_bars(rows.qid + "_" + rows.row_id.astype(str), rows.alignment,
                   persona_avg, "average alignment, all personas", p.ceiling,
+                  p.alignment, "this persona's alignment",
                   "question", f"Persona {p.pid} - alignment per question (n={len(rows)} questions)",
                   PERSONA_DIR / f"persona_{p.pid}.png")
 
@@ -122,6 +125,7 @@ def main():
         rows = pairs[(pairs.qid == q.qid) & (pairs.row_id == q.row_id)]
         draw_bars(rows.pid.astype(str), rows.alignment,
                   question_avg, "average alignment, all questions", q.ceiling,
+                  q.alignment, "this question's alignment",
                   "persona", f"{q.qid} row {q.row_id} - alignment per persona (n={len(rows)} personas)",
                   QUESTION_DIR / f"question_{q.qid}_{q.row_id}.png")
 
