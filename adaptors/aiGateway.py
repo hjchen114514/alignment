@@ -102,18 +102,25 @@ def parse_answers(output_text: str, n: int) -> list[int]:
 
 
 def ask_ai(icl: str, questions: list[dict], pid: int) -> list[int]:
-    # Prompt caching is automatic: OpenAI reuses any long prefix it has seen
-    # recently. Instructions + icl are identical for all 16 blocks of a persona,
-    # so blocks 2-16 hit the cache as long as the questions come after them.
-    # prompt_cache_key only routes a persona's requests to the same cache server.
+    # Prompt caching (gpt-5.6+) works at breakpoints. The automatic breakpoint
+    # lands at the end of the prompt, after the questions, so it never matched
+    # the next block. Instead we mark the end of the icl explicitly: instructions
+    # + icl are identical for all 16 blocks of a persona, so block 1 writes the
+    # cache and blocks 2-16 read it. mode "explicit" stops the useless automatic
+    # write. prompt_cache_key routes a persona's requests to the same cache.
     response = client.responses.create(
         model=CFG["model"],
         instructions=SYSTEM_PROMPT,
         input=[
-            {"role": "user", "content": f"PRIOR SURVEY RESPONSES:\n\n{icl}"},
+            {"role": "user", "content": [{
+                "type": "input_text",
+                "text": f"PRIOR SURVEY RESPONSES:\n\n{icl}",
+                "prompt_cache_breakpoint": {"mode": "explicit"},
+            }]},
             {"role": "user", "content": render_questions(questions)},
         ],
         text={"format": ANSWER_FORMAT},
         prompt_cache_key=f"persona-{pid}",
+        prompt_cache_options={"mode": "explicit"},
     )
     return parse_answers(response.output_text, len(questions))

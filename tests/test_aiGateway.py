@@ -42,7 +42,10 @@ def test_ask_ai_request(monkeypatch):
     assert sent["prompt_cache_key"] == "persona-7"
     assert sent["text"]["format"]["type"] == "json_schema"
     assert sent["text"]["format"]["strict"] is True
-    # persona text first (the cached prefix), questions after it
-    assert "PERSONA TEXT" in sent["input"][0]["content"]
+    # persona text first, ending in the explicit cache breakpoint; questions after it
+    icl_block = sent["input"][0]["content"][0]
+    assert "PERSONA TEXT" in icl_block["text"]
+    assert icl_block["prompt_cache_breakpoint"] == {"mode": "explicit"}
+    assert sent["prompt_cache_options"] == {"mode": "explicit"}
     assert "Q1: Pick one" in sent["input"][1]["content"]
     assert "tools" not in sent

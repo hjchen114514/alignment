@@ -76,13 +76,16 @@ def parse_question(q: dict, block_name: str):
     elif qtype == "Slider":
         rng = q.get("Range") or {}
         lo, hi = float(rng.get("Min", 0)), float(rng.get("Max", 100))
+        statements = q.get("Statements") or []
         for i, value in enumerate(answers.get("Values") or []):
             if value is None:
                 continue
             answer = to_int(value)
+            # each slider row is one statement; without it multi-row sliders read identically
+            statement = statements[i] if i < len(statements) else ""
             yield {
                 "qid": qid, "row_id": i, "question_type": qtype,
-                "questiontext": stem,
+                "questiontext": f"{stem} {statement}".strip(),
                 "options": [],
                 "range_min": lo, "range_max": hi,
                 "answer": answer, 

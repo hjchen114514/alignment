@@ -55,6 +55,21 @@ def test_parse_slider_uses_source_range():
     assert (rows[0]["range_min"], rows[0]["range_max"]) == (10.0, 50.0)
 
 
+def test_parse_slider_appends_each_statement():
+    q = {"QuestionID": "Q4", "QuestionType": "Slider", "QuestionText": "Support for:",
+         "Statements": ["carbon tax", "paid leave"], "Range": {"Min": 0, "Max": 100},
+         "Answers": {"Values": ["30", "60"]}}
+    rows = list(parse_question(q, "block"))
+    assert [r["questiontext"] for r in rows] == ["Support for: carbon tax", "Support for: paid leave"]
+
+
+def test_parse_slider_empty_statement_keeps_stem():
+    q = {"QuestionID": "Q5", "QuestionType": "Slider", "QuestionText": "How likely?",
+         "Statements": [""], "Range": {"Min": 0, "Max": 100}, "Answers": {"Values": ["50"]}}
+    (row,) = parse_question(q, "block")
+    assert row["questiontext"] == "How likely?"
+
+
 def test_parse_te_uses_config_range(monkeypatch):
     monkeypatch.setattr(importData, "TE_RANGES", {"QTE": (0, 20)})
     q = {"QuestionID": "QTE", "QuestionType": "TE", "Answers": {"Text": "12"}}

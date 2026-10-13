@@ -119,7 +119,10 @@ Slider to one per value; MC/TE always have `row_id = 0`.
   same key. Reruns resume from the JSONL (finished `(pid, qid)` are skipped), so
   never delete it unless you intend to pay to regenerate everything.
 - Prompt caching: instructions + persona icl form a byte-identical prefix for
-  all 16 of a persona's blocks; the questions must come after it.
+  all 16 of a persona's blocks; the questions must come after it. gpt-5.6+
+  caches only at breakpoints, so the icl block carries an explicit
+  `prompt_cache_breakpoint` and `prompt_cache_options.mode` is `explicit`
+  (the automatic breakpoint lands after the questions and never hits).
   `prompt_cache_key` is `persona-<pid>`.
 - `getSyntheticData` runs personas in a thread pool (`concurrency`), blocks of
   one persona sequentially. DuckDB inside worker threads needs its own
