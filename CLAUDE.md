@@ -100,6 +100,9 @@ Slider to one per value; MC/TE always have `row_id = 0`.
 - `personaDistances.parquet` (pid, JSD, n_question) and
   `calculatedResult_distances.parquet` (persona groupings only, no question level).
 
+`result/summary/<YYYY-MM-DD_HHMM>_<script>_summary.md`: everything a script
+printed, written by `common.record_summary` (wraps each script's `main()`).
+
 `result/diagram/`
 - `persona/persona_<pid>.png`: x = question, y = alignment; dashed lines for
   the average alignment of all personas, this persona's retest ceiling and
@@ -124,6 +127,10 @@ Slider to one per value; MC/TE always have `row_id = 0`.
   `prompt_cache_breakpoint` and `prompt_cache_options.mode` is `explicit`
   (the automatic breakpoint lands after the questions and never hits).
   `prompt_cache_key` is `persona-<pid>`.
+- Rate limit: cache reads still count toward TPM, so every request costs the
+  full ~27k persona tokens (~70 requests/min at 2M TPM; a full 1,600-request
+  run takes ~23 min minimum). `aiGateway.TokenRateLimiter` paces requests under
+  `tpm_limit` so they wait instead of failing with 429.
 - `getSyntheticData` runs personas in a thread pool (`concurrency`), blocks of
   one persona sequentially. DuckDB inside worker threads needs its own
   `duckdb.connect()`: threads sharing the default `duckdb.sql` connection deadlock.

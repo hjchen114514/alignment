@@ -49,3 +49,24 @@ def test_ask_ai_request(monkeypatch):
     assert sent["prompt_cache_options"] == {"mode": "explicit"}
     assert "Q1: Pick one" in sent["input"][1]["content"]
     assert "tools" not in sent
+
+
+def test_rate_limiter_waits_when_window_is_full(monkeypatch):
+    clock = {"now": 1000.0}
+    slept = []
+    monkeypatch.setattr(aiGateway.time, "monotonic", lambda: clock["now"])
+
+    def sleep(seconds):
+        slept.append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(aiGateway.time, "sleep", sleep)
+    limiter = aiGateway.TokenRateLimiter(100)
+
+    limiter.acquire(60)          # t=1000, under the cap: no wait
+    clock["now"] += 10
+    limiter.acquire(40)          # t=1010, exactly at the cap: no wait
+    assert slept == []
+    limiter.acquire(30)          # would exceed: wait until the t=1000 entry is 60 s old
+    assert slept == [pytest.approx(50)]
+    assert clock["now"] == pytest.approx(1060)

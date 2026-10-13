@@ -4,7 +4,8 @@ dataset: LLM-Digital-Twin/Twin-2K-500
 dataset_config: wave_split
 
 model: gpt-6-luna      # OpenAI API id; key in OPENAI_API_KEY (.env)
-max_retries: 3
+max_retries: 6         # SDK retries on 429/5xx, a backstop behind the rate limiter
+tpm_limit: 1900000     # tokens/min we allow ourselves; my account limit is 2,000,000 (Build tier)
 n_personas: 100
 n_synthetic: null         # personas getSyntheticData.py runs on, first n by pid (null = all), this is for debugging and testing
 concurrency: 8

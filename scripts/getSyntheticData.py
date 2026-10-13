@@ -15,7 +15,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     CFG, HUMAN_PARQUET, PERSONA_PARQUET, QUESTIONS_PARQUET,
-    SYNTHETIC_JSONL, SYNTHETIC_PARQUET, ensure_dirs,
+    SYNTHETIC_JSONL, SYNTHETIC_PARQUET, ensure_dirs, record_summary,
 )
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adaptors import aiGateway  # noqa: E402
@@ -197,4 +197,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with record_summary("getSyntheticData"):
+        main()

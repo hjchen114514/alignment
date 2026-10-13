@@ -20,7 +20,7 @@ import pyarrow.parquet as pq
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     HUMAN_PARQUET, HUMAN_RETEST_PARQUET, NUMBERS_DIR, PERSONA_PARQUET,
-    QUESTIONS_PARQUET, SYNTHETIC_PARQUET, ensure_dirs,
+    QUESTIONS_PARQUET, SYNTHETIC_PARQUET, ensure_dirs, record_summary,
 )
 
 DEMOGRAPHICS = ["race", "gender", "age", "education", "income",
@@ -285,4 +285,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with record_summary("alignmentResult"):
+        main()

@@ -1,5 +1,10 @@
 # This file contains shared functions and constants used by multiple scripts in the project. It is not intended to be run directly, but rather imported by other scripts.
 """Shared config loading and path helpers."""
+import io
+import sys
+import traceback
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 import yaml
 
@@ -20,6 +25,7 @@ DATA_DIR = ROOT / CFG["data_dir"]
 RESULT_DIR = ROOT / CFG["result_dir"]
 NUMBERS_DIR = RESULT_DIR / "numbers"
 DIAGRAM_DIR = RESULT_DIR / "diagram"
+SUMMARY_DIR = RESULT_DIR / "summary"
 
 HUMAN_PARQUET = DATA_DIR / "human_responses.parquet"
 HUMAN_RETEST_PARQUET = DATA_DIR / "human_retest.parquet"
@@ -53,3 +59,42 @@ def is_skipped_qid(qid: str) -> bool:
 def ensure_dirs() -> None:
     for d in (DATA_DIR, NUMBERS_DIR, DIAGRAM_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+class _Tee:
+    """Writes to the terminal and to a buffer at the same time."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text):
+        for stream in self.streams:
+            stream.write(text)
+        return len(text)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+@contextmanager
+def record_summary(script: str):
+    """Mirror everything a script prints into result/summary/<time>_<script>_summary.md.
+
+    A crash's traceback is recorded too. Runs started in the same minute share
+    a file name, so the later one replaces the earlier.
+    """
+    started = datetime.now()
+    buffer = io.StringIO()
+    terminal = sys.stdout
+    sys.stdout = _Tee(terminal, buffer)
+    try:
+        yield
+    except BaseException:
+        traceback.print_exc(file=buffer)
+        raise
+    finally:
+        sys.stdout = terminal
+        SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
+        path = SUMMARY_DIR / f"{started:%Y-%m-%d_%H%M}_{script}_summary.md"
+        path.write_text(f"# {script} - {started:%Y-%m-%d %H:%M}\n\n```\n{buffer.getvalue()}```\n")

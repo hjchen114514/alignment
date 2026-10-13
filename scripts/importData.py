@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     CFG, DATA_DIR, HUMAN_PARQUET, HUMAN_RETEST_PARQUET, PERSONA_PARQUET,
     QUESTIONS_PARQUET, categorize, ensure_dirs, is_skipped_block, is_skipped_qid,
+    record_summary,
 )
 
 #import te_ranges from config.yaml for the text entry questions, which carry no Range in the source
@@ -246,4 +247,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with record_summary("importData"):
+        main()

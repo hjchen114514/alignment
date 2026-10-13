@@ -33,6 +33,9 @@ block "pending", and a rerun retries only those.
 """
 import json
 import sys
+import threading
+import time
+from collections import deque
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -44,6 +47,37 @@ from scripts.common import CFG  # noqa: E402
 
 load_dotenv(ROOT / ".env")
 client = OpenAI(max_retries=CFG["max_retries"])  # reads OPENAI_API_KEY
+
+
+class TokenRateLimiter:
+    """Keeps the tokens sent in any 60 s window under the account's TPM limit.
+
+    Cache reads count toward TPM too, so every request costs the full ~27k
+    persona tokens. Without pacing, 8 threads fill the minute in a burst and
+    the rest of the minute's requests fail with 429; with it they just wait.
+    """
+
+    def __init__(self, tokens_per_minute: int):
+        self.cap = tokens_per_minute
+        self.sent = deque()            # (time sent, tokens)
+        self.lock = threading.Lock()
+
+    def acquire(self, tokens: int) -> None:
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                while self.sent and now - self.sent[0][0] >= 60:
+                    self.sent.popleft()
+                if sum(t for _, t in self.sent) + tokens <= self.cap:
+                    self.sent.append((now, tokens))
+                    return
+                wait = 60 - (now - self.sent[0][0])
+            time.sleep(wait)
+
+
+# a little under the real limit, since the token count below is an estimate
+limiter = TokenRateLimiter(CFG["tpm_limit"])
+CHARS_PER_TOKEN = 3.3   # measured ~3.5 on the persona text; lower = safer estimate
 
 # Framed as survey simulation rather than identity role-play, which refuses
 # less often on the political blocks.
@@ -108,6 +142,8 @@ def ask_ai(icl: str, questions: list[dict], pid: int) -> list[int]:
     # + icl are identical for all 16 blocks of a persona, so block 1 writes the
     # cache and blocks 2-16 read it. mode "explicit" stops the useless automatic
     # write. prompt_cache_key routes a persona's requests to the same cache.
+    prompt_chars = len(SYSTEM_PROMPT) + len(icl) + len(render_questions(questions))
+    limiter.acquire(int(prompt_chars / CHARS_PER_TOKEN))
     response = client.responses.create(
         model=CFG["model"],
         instructions=SYSTEM_PROMPT,

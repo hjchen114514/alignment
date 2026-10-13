@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     DIAGRAM_DIR, HUMAN_PARQUET, NUMBERS_DIR, SYNTHETIC_PARQUET, ensure_dirs,
+    record_summary,
 )
 
 PERSONA_DIR = DIAGRAM_DIR / "persona"
@@ -138,4 +139,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with record_summary("drawDiagram"):
+        main()

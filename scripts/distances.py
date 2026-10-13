@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     CFG, DIAGRAM_DIR, HUMAN_PARQUET, NUMBERS_DIR, PERSONA_PARQUET,
-    SYNTHETIC_PARQUET, ensure_dirs,
+    SYNTHETIC_PARQUET, ensure_dirs, record_summary,
 )
 from drawDiagram import draw_rank  # noqa: E402
 
@@ -229,4 +229,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with record_summary("distances"):
+        main()
