@@ -99,3 +99,34 @@ def test_skips():
     assert not is_skipped_block("False consensus")
     assert is_skipped_qid("QID163")
     assert not is_skipped_qid("QID1")
+
+
+def test_consistency_accepts_same_question_for_everyone():
+    seen = {("Q1", 0): {(1, "wave1_3"): ("t", (), 0.0, 1.0), (1, "wave4"): ("t", (), 0.0, 1.0),
+                        (2, "wave1_3"): ("t", (), 0.0, 1.0)}}
+    importData.check_question_consistency(seen, [])
+
+
+def test_consistency_allows_per_persona_pricing_text():
+    seen = {("QID9_1", 0): {(1, "wave1_3"): ("ham $35.99", (), 0.0, 1.0),
+                            (2, "wave1_3"): ("chips $0.00", (), 0.0, 1.0)}}
+    importData.check_question_consistency(seen, [{"qid": "QID9_1"}])
+
+
+def test_consistency_rejects_text_that_varies_outside_pricing():
+    seen = {("Q1", 0): {(1, "wave1_3"): ("a", (), 0.0, 1.0), (2, "wave1_3"): ("b", (), 0.0, 1.0)}}
+    with pytest.raises(ValueError, match="2 different texts"):
+        importData.check_question_consistency(seen, [])
+
+
+def test_consistency_rejects_options_that_vary():
+    seen = {("Q1", 0): {(1, "wave1_3"): ("t", ("x", "y"), 1.0, 2.0),
+                        (2, "wave1_3"): ("t", ("y", "x"), 1.0, 2.0)}}
+    with pytest.raises(ValueError, match="options or range"):
+        importData.check_question_consistency(seen, [])
+
+
+def test_consistency_rejects_retest_with_a_different_question():
+    seen = {("Q1", 0): {(1, "wave1_3"): ("t", (), 0.0, 1.0), (1, "wave4"): ("other", (), 0.0, 1.0)}}
+    with pytest.raises(ValueError, match="wave 1-3 and wave 4"):
+        importData.check_question_consistency(seen, [])

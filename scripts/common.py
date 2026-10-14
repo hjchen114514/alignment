@@ -33,6 +33,10 @@ SYNTHETIC_PARQUET = DATA_DIR / "synthetic_responses.parquet"
 SYNTHETIC_JSONL = DATA_DIR / "synthetic_responses.jsonl"
 QUESTIONS_PARQUET = DATA_DIR / "questions.parquet"
 PERSONA_PARQUET = DATA_DIR / "persona.parquet"
+# the pricing questions show each person a different product and price under the
+# same qid, so their text is stored per persona rather than once in questions.parquet
+PRICING_TEXT_PARQUET = DATA_DIR / "humanPricingQuestionText.parquet"
+PRICING_CATEGORY = "Pricing Preferences"
 
 
 def categorize(block_name: str) -> str:

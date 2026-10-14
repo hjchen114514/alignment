@@ -17,10 +17,10 @@ themselves.
 | | score |
 |---|---|
 | retest accuracy (human vs themself) | **82.78%** (the paper reports 81.72% on ~2,000 personas) |
-| alignment (twin vs human) | **71.60%** (95% CI 70.2% - 72.9%) |
-| alignment ÷ retest accuracy | **86.5%** |
+| alignment (twin vs human) | **72.82%** |
+| alignment ÷ retest accuracy | **88.0%** |
 
-The twins get 86.5% of the way to the human consistency ceiling.
+The twins get 88.0% of the way to the human consistency ceiling.
 
 > **Replication will be close, not exact.** The model runs at default
 > temperature, and the OpenAI Responses API has no `seed` parameter, so a
@@ -47,13 +47,14 @@ The twins get 86.5% of the way to the human consistency ceiling.
 
 All numbers are from the 100-persona run above.
 
-1. **Consistent people are easier to twin.** Persona alignment correlates with
-   that persona's own retest ceiling (r = +0.41, p = 0.00003). *Why it's
-   interesting:* a low score often reflects a noisy human, not just a model
-   failure, so a score only means something next to its ceiling.
+1. **Alignment moves with retest accuracy.** Personas whose own answers are
+   less consistent also tend to have lower alignment (r = +0.39 per persona,
+   +0.44 per question). *Why it's interesting:* a score means most next to
+   its ceiling. It is not a rule, though: the best-aligned persona (88.5%) has
+   a below-average ceiling of 69.3%.
 2. **Twins are more extreme than people, in both directions.**
    - *More rational:* all 100 twins pick the likelier outcome on all 16
-     probability-matching trials; humans do 56-93% of the time. 82% of twins
+     probability-matching trials; humans do 56-93% of the time on each trial. 82% of twins
      would drive 10 minutes to save $10 on a $250 jacket; 35% of humans would.
      The jacket block scores 35.1% alignment against an 87.7% ceiling.
    - *More biased:* the twins show the Allais certainty effect (61 vs 38
@@ -62,22 +63,26 @@ All numbers are from the 100-persona run above.
    - *Why it's interesting:* the twins seem to answer the way a textbook
      *describes* people, not the way these people answered. A study run on
      these twins would overstate classic effects.
-3. **Pricing is at chance.** On 40 "would you buy at this price" questions,
-   alignment is 52.95%; chance agreement at these buy rates is 51.1%. Per
-   product, twin and human buy rates correlate at r = 0.06. Humans are 84.5%
-   consistent here. *Why it's interesting:* the twins match the *average* buy
-   rate (44.6% vs 42.0%) but not who buys or which product is popular.
+3. **Pricing: right on average, weaker per person.** On 40 "would you buy
+   this product at this price" questions (each person saw their own prices),
+   alignment is 72.45% vs a ceiling of 84.5% and chance agreement of 50.7%.
+   Per product, twin and human buy rates correlate at r = 0.76. *Why it's
+   interesting:* the twins know which products are popular but are more
+   price-sensitive than people: below half a product's median price, 84% of
+   twins buy vs 72% of humans.
 4. **Twins are far less varied than people.** The mean std per question is
-   0.155 for twins and 0.366 for humans. On 28 of 118 questions, every twin
+   0.250 for twins and 0.366 for humans. On 17 of 118 questions, every twin
    gave the identical answer. *Why it's interesting:* conditioning on a
    persona moves the model less than real differences between people do. A
    collapsed answer can still score high when most humans agree with it.
-5. **Demographic gaps are mostly not significant.** Race, gender, age, income,
-   party and political views show no reliable alignment gap at n = 100.
-   Education shows a weak, tentative one. *Why it's interesting:* the
-   White-vs-Black gap (+3.5 pts, CI −0.8 … +7.8) looks like "LLMs favor the
-   majority". Most of it disappears relative to each group's ceiling (86.5%
-   vs 85.4%).
+5. **No race gap at n = 100.** Using `mean ± 1.96 × s / √n`, White is
+   73.5% (71.9% – 75.2%, n = 61) and Black 70.3% (66.3% – 74.3%, n = 16).
+   *Why it's interesting:* the gap looks like "LLMs favor the majority",
+   but the intervals overlap, and Black respondents' ceiling is also lower.
+   Relative to ceiling the two groups are nearly equal (87.7% vs 86.7%).
+   Party, views, gender, age and income intervals overlap too. Education is
+   the only demographic with two non-overlapping groups, and only by 0.4
+   points.
 
 ## How to use this repo
 
@@ -256,9 +261,21 @@ point; the parquet is rebuilt from it.
 | `category` | VARCHAR | Behavioral economics / Non-experimental heuristics and biases / Pricing Preferences |
 | `block` | VARCHAR | survey block name, e.g. `False consensus` |
 | `question_type` | VARCHAR | `Matrix`, `MC`, `Slider` or `TE` (text entry) |
-| `questiontext` | VARCHAR | question text, including the matrix row label or slider statement |
+| `questiontext` | VARCHAR | question text, including the matrix row label or slider statement. For pricing questions this is only the first persona's text; see below |
 | `options` | VARCHAR[] | answer options for Matrix/MC; empty for Slider/TE |
 | `range_min`, `range_max` | DOUBLE | valid answer range, used for normalization |
+
+**`humanPricingQuestionText.parquet`**: one row per (pid, pricing qid). The
+survey showed each person a different product and price under the same pricing
+qid (e.g. QID9_3 is Goya ham at $35.99 for pid 574 but Doritos at $0.00 for pid
+2001), and the same one again in wave 4. `questions.parquet` can hold only one
+text per qid, so `getSyntheticData.py` takes each twin's pricing text from here.
+
+| column | type | content |
+|---|---|---|
+| `pid` | BIGINT | persona id |
+| `qid` | VARCHAR | pricing question id, `QID9_1` … `QID9_40` |
+| `questiontext` | VARCHAR | the product and price this persona was shown |
 
 **`persona.parquet`**: one row per persona.
 

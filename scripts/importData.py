@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 #import all common.py functions and paths
 from common import (  # noqa: E402
     CFG, DATA_DIR, HUMAN_PARQUET, HUMAN_RETEST_PARQUET, PERSONA_PARQUET,
-    QUESTIONS_PARQUET, categorize, ensure_dirs, is_skipped_block, is_skipped_qid,
-    record_summary,
+    PRICING_CATEGORY, PRICING_TEXT_PARQUET, QUESTIONS_PARQUET, categorize, ensure_dirs,
+    is_skipped_block, is_skipped_qid, record_summary,
 )
 
 #import te_ranges from config.yaml for the text entry questions, which carry no Range in the source
@@ -120,6 +120,36 @@ def normalize(answer: int, lo: float, hi: float) -> float:
     return (answer - lo) / (hi - lo)
 
 
+def check_question_consistency(seen: dict, pricing_rows: list[dict]) -> None:
+    """Fail loudly if a question is not the same question for everyone who saw it.
+
+    questions.parquet stores one text per (qid, row_id), and every twin is asked
+    that text, so this must hold for every question except the pricing ones,
+    whose per-persona text is stored in humanPricingQuestionText. Also the
+    retest ceiling needs each person to see the same question in both waves.
+
+    seen maps (qid, row_id) -> {(pid, wave): (text, options, range)}.
+    """
+    problems = []
+    pricing_qids = {r["qid"] for r in pricing_rows}
+    for (qid, row_id), versions in seen.items():
+        by_pid: dict[int, dict] = {}
+        for (pid, wave), version in versions.items():
+            by_pid.setdefault(pid, {})[wave] = version
+        if any(len(set(w.values())) > 1 for w in by_pid.values()):
+            problems.append(f"{qid}_{row_id}: differs between wave 1-3 and wave 4 for the same person")
+        first_wave = {w["wave1_3"] for w in by_pid.values() if "wave1_3" in w}
+        texts = {v[0] for v in first_wave}
+        rest = {v[1:] for v in first_wave}
+        if len(rest) > 1:
+            problems.append(f"{qid}_{row_id}: options or range differ between personas")
+        if len(texts) > 1 and (qid not in pricing_qids or row_id != 0):
+            problems.append(f"{qid}_{row_id}: {len(texts)} different texts across personas, "
+                            f"but only one can be sent to the twins")
+    if problems:
+        raise ValueError("questions are not the same for everyone:\n  " + "\n  ".join(problems))
+
+
 def main():
     # ensure that the data and result directories exist, creating them if necessary; imported from common.py
     ensure_dirs()
@@ -135,6 +165,10 @@ def main():
     print(f"  {len(ds)} personas available, taking first {n}")
 
     human_rows, retest_rows, persona_rows = [], [], []
+    # pricing questions: same qid, different product and price for every persona
+    pricing_rows = []
+    # every version of every question, to check they really are the same question
+    seen: dict[tuple[str, int], dict] = {}
 
     #questions is a dictionary with keys as (qid, row_id) tuples and values as dictionaries containing question metadata
     questions: dict[tuple[str, int], dict] = {}
@@ -185,6 +219,13 @@ def main():
                                 "range_min": rec["range_min"],
                                 "range_max": rec["range_max"],
                             }
+                        wave = "wave1_3" if record_metadata else "wave4"
+                        seen.setdefault(key, {})[(pid, wave)] = (
+                            rec["questiontext"], tuple(rec["options"]),
+                            rec["range_min"], rec["range_max"])
+                        if record_metadata and category == PRICING_CATEGORY:
+                            pricing_rows.append({"pid": pid, "qid": rec["qid"],
+                                                 "questiontext": rec["questiontext"]})
                         norm = normalize(rec["answer"], rec["range_min"], rec["range_max"])
 
                         #in the case of an answer falling outside the range, we clip it to [0,1] and count how many times this happens; will be printed later in terminal
@@ -217,6 +258,8 @@ def main():
         if (index + 1) % 25 == 0:
             print(f"  {index + 1}/{n} personas parsed")
 
+    check_question_consistency(seen, pricing_rows)
+
     #turn the lists of dicts into pandas DataFrames and write them to parquet files in the data directory
     human = pd.DataFrame(human_rows)
     retest = pd.DataFrame(retest_rows)
@@ -228,6 +271,8 @@ def main():
     retest.to_parquet(HUMAN_RETEST_PARQUET, index=False)
     qdf.to_parquet(QUESTIONS_PARQUET, index=False)
     pdf.to_parquet(PERSONA_PARQUET, index=False)
+    pricing = pd.DataFrame(pricing_rows, columns=["pid", "qid", "questiontext"])
+    pricing.to_parquet(PRICING_TEXT_PARQUET, index=False)
 
     print(f"\nwrote {HUMAN_PARQUET.relative_to(DATA_DIR.parent)}  "
           f"{len(human):,} rows ({human.pid.nunique()} personas)")
@@ -236,6 +281,8 @@ def main():
     print(f"wrote {QUESTIONS_PARQUET.relative_to(DATA_DIR.parent)}  {len(qdf):,} rows "
           f"({qdf.qid.nunique()} distinct qids, {qdf.block.nunique()} blocks)")
     print(f"wrote {PERSONA_PARQUET.relative_to(DATA_DIR.parent)}  {len(pdf):,} rows")
+    print(f"wrote {PRICING_TEXT_PARQUET.relative_to(DATA_DIR.parent)}  {len(pricing):,} rows "
+          f"({pricing.questiontext.nunique():,} distinct pricing texts)")
     if clipped:
         print(f"WARNING: {clipped} normalized values fell outside [0,1] and were clipped")
 

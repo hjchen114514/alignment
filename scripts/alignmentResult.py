@@ -220,7 +220,7 @@ def report(persona_df: pd.DataFrame, question_df: pd.DataFrame,
     print("=" * 62)
     print(f"  ceiling  (human vs himself)   {ceiling:>8.2%}")
     print(f"  alignment(synthetic vs human) {align:>8.2%}")
-    print(f"  pct of ceiling                {align / ceiling:>8.2%}")
+    print(f"  percentage of alignment/ceiling                {align / ceiling:>8.2%}")
     print(f"  personas={len(persona_df)}  questions={len(question_df)}")
 
     best = persona_df.nlargest(3, "alignment")

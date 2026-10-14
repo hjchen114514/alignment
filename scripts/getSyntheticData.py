@@ -14,7 +14,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
-    CFG, HUMAN_PARQUET, PERSONA_PARQUET, QUESTIONS_PARQUET,
+    CFG, HUMAN_PARQUET, PERSONA_PARQUET, PRICING_TEXT_PARQUET, QUESTIONS_PARQUET,
     SYNTHETIC_JSONL, SYNTHETIC_PARQUET, ensure_dirs, record_summary,
 )
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -27,7 +27,8 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
     """Every question this persona was actually asked, grouped by block.
 
     Three-way join: human_responses says which questions this pid saw,
-    questions supplies the text and options.
+    questions supplies the text and options. Pricing questions take this
+    persona's own text (product and price) from humanPricingQuestionText.
     """
 
     #query the row of questions that this persona (pid) was asked, joining the human responses with the questions table to get the question details
@@ -36,9 +37,11 @@ def load_blocks_for_persona(pid: int) -> dict[str, list[dict]]:
     with duckdb.connect() as con:
         rows = con.sql(f"""
             SELECT q.block, q.qid, q.row_id, q.question_type,
-                   q.questiontext, q.options, q.range_min, q.range_max
+                   COALESCE(p.questiontext, q.questiontext), q.options,
+                   q.range_min, q.range_max
             FROM '{HUMAN_PARQUET}' h
             JOIN '{QUESTIONS_PARQUET}' q USING (qid, row_id)
+            LEFT JOIN '{PRICING_TEXT_PARQUET}' p ON p.pid = h.pid AND p.qid = h.qid
             WHERE h.pid = {int(pid)}
             ORDER BY q.block, q.qid, q.row_id
         """).fetchall()

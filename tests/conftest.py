@@ -66,6 +66,7 @@ def tiny_data(tmp_path, monkeypatch):
         "SYNTHETIC_PARQUET": tmp_path / "synthetic_responses.parquet",
         "QUESTIONS_PARQUET": tmp_path / "questions.parquet",
         "PERSONA_PARQUET": tmp_path / "persona.parquet",
+        "PRICING_TEXT_PARQUET": tmp_path / "humanPricingQuestionText.parquet",
     }
     _answers(HUMAN).to_parquet(paths["HUMAN_PARQUET"], index=False)
     _answers(RETEST).to_parquet(paths["HUMAN_RETEST_PARQUET"], index=False)
@@ -83,6 +84,12 @@ def tiny_data(tmp_path, monkeypatch):
          "race": "White", "favoredPoliticalParty": "Republican", "income": "Low",
          "politicalViews": "Conservative", "icl": "persona two"},
     ]).to_parquet(paths["PERSONA_PARQUET"], index=False)
+    # pricing questions show each persona its own product and price
+    pd.DataFrame([
+        {"pid": 1, "qid": "q3", "questiontext": "butter $4.99"},
+        {"pid": 1, "qid": "q4", "questiontext": "ham $35.99"},
+        {"pid": 2, "qid": "q3", "questiontext": "chips $0.00"},
+    ]).to_parquet(paths["PRICING_TEXT_PARQUET"], index=False)
 
     import alignmentResult
     import distances

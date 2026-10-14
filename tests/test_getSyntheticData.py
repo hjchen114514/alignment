@@ -124,3 +124,11 @@ def test_load_blocks_from_worker_threads(tiny_data):
     assert {b: [q["qid"] for q in qs] for b, qs in results[0].items()} == \
         {"A": ["q1", "q2"], "B": ["q3", "q4"]}
     assert [q["qid"] for q in results[1]["B"]] == ["q3"]
+
+
+def test_load_blocks_uses_each_personas_pricing_text(tiny_data):
+    """Same pricing qid, different product per persona; other questions share one text."""
+    one, two = gs.load_blocks_for_persona(1), gs.load_blocks_for_persona(2)
+    assert [q["questiontext"] for q in one["B"]] == ["butter $4.99", "ham $35.99"]
+    assert [q["questiontext"] for q in two["B"]] == ["chips $0.00"]
+    assert [q["questiontext"] for q in two["A"]] == ["text q1", "text q2"]

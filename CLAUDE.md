@@ -65,6 +65,13 @@ Slider to one per value; MC/TE always have `row_id = 0`.
   the source of the retest ceiling. `human_responses` comes from `wave4_Q_wave1_3_A`.
 - `data/questions.parquet`: qid, row_id, category, block, question_type,
   questiontext, options, range_min, range_max.
+- `data/humanPricingQuestionText.parquet`: pid, qid, questiontext. Pricing
+  questions (category "Pricing Preferences") show each person a different
+  product and price under the same qid which is unclear why; `questions.parquet` keeps only the
+  first persona's text, so `getSyntheticData` LEFT JOINs this table and uses
+  the persona's own text. Never send one persona's pricing text to all twins.
+  `importData.check_question_consistency` raises if any other question's
+  text, options or range differs between personas, or between a person's two waves.
 - `data/persona.parquet`: pid, gender, age, education, race,
   favoredPoliticalParty, income, politicalViews (from wave 1-3 by QID12-22 in
   `demographic_qids`), icl (`wave1_3_persona_text`).
